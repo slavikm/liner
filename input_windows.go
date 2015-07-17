@@ -169,7 +169,7 @@ func (s *State) readNext() (interface{}, error) {
 			if thing.err != nil {
 				return nil, thing.err
 			}
-			input := thing.input
+			input := thing.r
 			if input.eventType == window_buffer_size_event {
 				xy := (*coord)(unsafe.Pointer(&input.blob[0]))
 				s.columns = int(xy.x)
