@@ -71,6 +71,8 @@ func NewLiner() *State {
 		s.outputRedirected = s.columns <= 0
 	}
 
+	s.lineAbovePrompt = make(chan string)
+
 	return &s
 }
 
@@ -150,6 +152,8 @@ func (s *State) readNext() (interface{}, error) {
 	case <-s.winch:
 		s.getColumns()
 		return winch, nil
+	case data := <-s.lineAbovePrompt:
+		return data, nil
 	}
 	if r != esc {
 		return r, nil

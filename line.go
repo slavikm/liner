@@ -769,6 +769,11 @@ mainLoop:
 				pos = len(line)
 			}
 			s.refresh(p, line, pos)
+		case string:
+			s.cursorPos(0)
+			s.eraseLine()
+			fmt.Println(next.(string))
+			s.refresh(p, line, pos)
 		}
 		if !historyAction {
 			prefixHistory = s.getHistoryByPrefix(string(line))

@@ -2,6 +2,7 @@ package liner
 
 import (
 	"bufio"
+	"errors"
 	"os"
 	"syscall"
 	"unsafe"
@@ -30,6 +31,11 @@ const (
 
 type inputMode uint32
 
+type nexter struct {
+	r   input_record
+	err error
+}
+
 // State represents an open terminal
 type State struct {
 	commonState
@@ -39,6 +45,7 @@ type State struct {
 	defaultMode inputMode
 	key         interface{}
 	repeat      uint16
+	next        <-chan nexter
 }
 
 const (
@@ -77,6 +84,8 @@ func NewLiner() *State {
 
 	s.getColumns()
 	s.outputRedirected = s.columns <= 0
+
+	s.lineAbovePrompt = make(chan string)
 
 	return &s
 }
@@ -151,106 +160,107 @@ func (s *State) readNext() (interface{}, error) {
 		return s.key, nil
 	}
 
-	var input input_record
-	pbuf := uintptr(unsafe.Pointer(&input))
-	var rv uint32
-	prv := uintptr(unsafe.Pointer(&rv))
-
 	for {
-		ok, _, err := procReadConsoleInput.Call(uintptr(s.handle), pbuf, 1, prv)
-
-		if ok == 0 {
-			return nil, err
-		}
-
-		if input.eventType == window_buffer_size_event {
-			xy := (*coord)(unsafe.Pointer(&input.blob[0]))
-			s.columns = int(xy.x)
-			return winch, nil
-		}
-		if input.eventType != key_event {
-			continue
-		}
-		ke := (*key_event_record)(unsafe.Pointer(&input.blob[0]))
-		if ke.KeyDown == 0 {
-			continue
-		}
-
-		if ke.VirtualKeyCode == vk_tab && ke.ControlKeyState&modKeys == shiftPressed {
-			s.key = shiftTab
-		} else if ke.VirtualKeyCode == yKey && (ke.ControlKeyState&modKeys == leftAltPressed ||
-			ke.ControlKeyState&modKeys == rightAltPressed) {
-			s.key = altY
-		} else if ke.Char > 0 {
-			s.key = rune(ke.Char)
-		} else {
-			switch ke.VirtualKeyCode {
-			case vk_prior:
-				s.key = pageUp
-			case vk_next:
-				s.key = pageDown
-			case vk_end:
-				s.key = end
-			case vk_home:
-				s.key = home
-			case vk_left:
-				s.key = left
-				if ke.ControlKeyState&(leftCtrlPressed|rightCtrlPressed) != 0 {
-					if ke.ControlKeyState&modKeys == ke.ControlKeyState&(leftCtrlPressed|rightCtrlPressed) {
-						s.key = wordLeft
-					}
-				}
-			case vk_right:
-				s.key = right
-				if ke.ControlKeyState&(leftCtrlPressed|rightCtrlPressed) != 0 {
-					if ke.ControlKeyState&modKeys == ke.ControlKeyState&(leftCtrlPressed|rightCtrlPressed) {
-						s.key = wordRight
-					}
-				}
-			case vk_up:
-				s.key = up
-			case vk_down:
-				s.key = down
-			case vk_insert:
-				s.key = insert
-			case vk_delete:
-				s.key = del
-			case vk_f1:
-				s.key = f1
-			case vk_f2:
-				s.key = f2
-			case vk_f3:
-				s.key = f3
-			case vk_f4:
-				s.key = f4
-			case vk_f5:
-				s.key = f5
-			case vk_f6:
-				s.key = f6
-			case vk_f7:
-				s.key = f7
-			case vk_f8:
-				s.key = f8
-			case vk_f9:
-				s.key = f9
-			case vk_f10:
-				s.key = f10
-			case vk_f11:
-				s.key = f11
-			case vk_f12:
-				s.key = f12
-			default:
-				// Eat modifier keys
-				// TODO: return Action(Unknown) if the key isn't a
-				// modifier.
+		select {
+		case thing, ok := <-s.next:
+			if !ok {
+				return 0, errors.New("liner: internal error")
+			}
+			if thing.err != nil {
+				return nil, thing.err
+			}
+			input := thing.input
+			if input.eventType == window_buffer_size_event {
+				xy := (*coord)(unsafe.Pointer(&input.blob[0]))
+				s.columns = int(xy.x)
+				return winch, nil
+			}
+			if input.eventType != key_event {
 				continue
 			}
-		}
+			ke := (*key_event_record)(unsafe.Pointer(&input.blob[0]))
+			if ke.KeyDown == 0 {
+				continue
+			}
 
-		if ke.RepeatCount > 1 {
-			s.repeat = ke.RepeatCount - 1
+			if ke.VirtualKeyCode == vk_tab && ke.ControlKeyState&modKeys == shiftPressed {
+				s.key = shiftTab
+			} else if ke.VirtualKeyCode == yKey && (ke.ControlKeyState&modKeys == leftAltPressed ||
+				ke.ControlKeyState&modKeys == rightAltPressed) {
+				s.key = altY
+			} else if ke.Char > 0 {
+				s.key = rune(ke.Char)
+			} else {
+				switch ke.VirtualKeyCode {
+				case vk_prior:
+					s.key = pageUp
+				case vk_next:
+					s.key = pageDown
+				case vk_end:
+					s.key = end
+				case vk_home:
+					s.key = home
+				case vk_left:
+					s.key = left
+					if ke.ControlKeyState&(leftCtrlPressed|rightCtrlPressed) != 0 {
+						if ke.ControlKeyState&modKeys == ke.ControlKeyState&(leftCtrlPressed|rightCtrlPressed) {
+							s.key = wordLeft
+						}
+					}
+				case vk_right:
+					s.key = right
+					if ke.ControlKeyState&(leftCtrlPressed|rightCtrlPressed) != 0 {
+						if ke.ControlKeyState&modKeys == ke.ControlKeyState&(leftCtrlPressed|rightCtrlPressed) {
+							s.key = wordRight
+						}
+					}
+				case vk_up:
+					s.key = up
+				case vk_down:
+					s.key = down
+				case vk_insert:
+					s.key = insert
+				case vk_delete:
+					s.key = del
+				case vk_f1:
+					s.key = f1
+				case vk_f2:
+					s.key = f2
+				case vk_f3:
+					s.key = f3
+				case vk_f4:
+					s.key = f4
+				case vk_f5:
+					s.key = f5
+				case vk_f6:
+					s.key = f6
+				case vk_f7:
+					s.key = f7
+				case vk_f8:
+					s.key = f8
+				case vk_f9:
+					s.key = f9
+				case vk_f10:
+					s.key = f10
+				case vk_f11:
+					s.key = f11
+				case vk_f12:
+					s.key = f12
+				default:
+					// Eat modifier keys
+					// TODO: return Action(Unknown) if the key isn't a
+					// modifier.
+					continue
+				}
+			}
+
+			if ke.RepeatCount > 1 {
+				s.repeat = ke.RepeatCount - 1
+			}
+			return s.key, nil
+		case data := <-s.lineAbovePrompt:
+			return data, nil
 		}
-		return s.key, nil
 	}
 	return unknown, nil
 }
@@ -268,9 +278,37 @@ func (s *State) startPrompt() {
 		mode &^= enableProcessedInput
 		mode.ApplyMode()
 	}
+	s.restartPrompt()
 }
 
 func (s *State) restartPrompt() {
+	next := make(chan nexter)
+	go func() {
+		var input input_record
+		pbuf := uintptr(unsafe.Pointer(&input))
+		var rv uint32
+		prv := uintptr(unsafe.Pointer(&rv))
+		for {
+			ok, _, err := procReadConsoleInput.Call(uintptr(s.handle), pbuf, 1, prv)
+			if ok == 0 {
+				next <- nexter{err: err}
+				close(next)
+				return
+			}
+			next <- nexter{r: input}
+			if input.eventType == key_event {
+				ke := (*key_event_record)(unsafe.Pointer(&input.blob[0]))
+				if ke.KeyDown != 0 && ke.Char > 0 {
+					ch := rune(ke.Char)
+					if ch == '\n' || ch == '\r' {
+						close(next)
+						return
+					}
+				}
+			}
+		}
+	}()
+	s.next = next
 }
 
 func (s *State) stopPrompt() {

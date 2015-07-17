@@ -29,6 +29,7 @@ type commonState struct {
 	ctrlCAborts       bool
 	r                 *bufio.Reader
 	tabStyle          TabStyle
+	lineAbovePrompt   chan string
 }
 
 // TabStyle is used to select how tab completions are displayed.
@@ -216,4 +217,9 @@ func (s *State) promptUnsupported(p string) (string, error) {
 		return "", err
 	}
 	return string(bytes.TrimSpace(linebuf)), nil
+}
+
+// PrintAbovePrompt the given string
+func (s *State) PrintAbovePrompt(data string) {
+	s.lineAbovePrompt <- data
 }
