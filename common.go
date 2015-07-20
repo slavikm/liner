@@ -223,3 +223,8 @@ func (s *State) promptUnsupported(p string) (string, error) {
 func (s *State) PrintAbovePrompt(data string) {
 	s.lineAbovePrompt <- data
 }
+
+// InputRedirected returns true if the input is redirected
+func (s *State) InputRedirected() bool {
+	return s.inputRedirected
+}

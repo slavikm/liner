@@ -861,6 +861,11 @@ mainLoop:
 				line = append(line[:pos], append([]rune{v}, line[pos:]...)...)
 				pos++
 			}
+		case string:
+			s.cursorPos(0)
+			s.eraseLine()
+			fmt.Println(next.(string))
+			s.refresh(p, line, pos)
 		}
 	}
 	return string(line), nil
