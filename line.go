@@ -460,10 +460,23 @@ func (s *State) yank(p []rune, text []rune, pos int) ([]rune, int, interface{}, 
 	return line, pos, esc, nil
 }
 
+// drainLineAbovePromptBuffer in case someone called PrintAbovePrompt
+func (s *State) drainLineAbovePromptBuffer() {
+	for i := 0; i < lineAbovePromptBufferSize; i++ {
+		select {
+		case data := <-s.lineAbovePrompt:
+			fmt.Println(data)
+		default:
+			break
+		}
+	}
+}
+
 // Prompt displays p and returns a line of user input, not including a trailing
 // newline character. An io.EOF error is returned if the user signals end-of-file
 // by pressing Ctrl-D. Prompt allows line editing if the terminal supports it.
 func (s *State) Prompt(prompt string) (string, error) {
+	defer s.drainLineAbovePromptBuffer()
 	if s.inputRedirected || !s.terminalSupported {
 		return s.promptUnsupported(prompt)
 	}
@@ -789,6 +802,7 @@ mainLoop:
 // PasswordPrompt displays p, and then waits for user input. The input typed by
 // the user is not displayed in the terminal.
 func (s *State) PasswordPrompt(prompt string) (string, error) {
+	defer s.drainLineAbovePromptBuffer()
 	if !s.terminalSupported {
 		return "", errors.New("liner: function not supported in this terminal")
 	}

@@ -62,6 +62,9 @@ const KillRingMax = 60
 // HistoryLimit is the maximum number of entries saved in the scrollback history.
 const HistoryLimit = 1000
 
+// lineAbovePromptBufferSize is used to cache messages to be printed above prompt
+const lineAbovePromptBufferSize = 5
+
 // ReadHistory reads scrollback history from r. Returns the number of lines
 // read, and any read error (except io.EOF).
 func (s *State) ReadHistory(r io.Reader) (num int, err error) {
@@ -220,8 +223,13 @@ func (s *State) promptUnsupported(p string) (string, error) {
 }
 
 // PrintAbovePrompt the given string
-func (s *State) PrintAbovePrompt(data string) {
-	s.lineAbovePrompt <- data
+func (s *State) PrintAbovePrompt(data string) error {
+	select {
+	case s.lineAbovePrompt <- data:
+		return nil
+	default:
+		return errors.New("Line buffer is full")
+	}
 }
 
 // InputRedirected returns true if the input is redirected

@@ -71,7 +71,7 @@ func NewLiner() *State {
 		s.outputRedirected = s.columns <= 0
 	}
 
-	s.lineAbovePrompt = make(chan string)
+	s.lineAbovePrompt = make(chan string, lineAbovePromptBufferSize)
 
 	return &s
 }
